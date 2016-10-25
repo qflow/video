@@ -1,0 +1,11 @@
+*.user
+*.pro.user*
+*~
+*.orig
+*.kdev4
+*.VC.db
+*.VC.opendb
+.vs
+.vscode
+build
+ipch
