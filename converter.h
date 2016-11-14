@@ -1,14 +1,9 @@
 #pragma once
 #include "ffmpeg.h"
+#include "size.h"
 
 namespace qflow {
 	namespace video {
-		struct size
-		{
-			int width;
-			int height;
-		};
-
 		class converter
 		{
 		public:

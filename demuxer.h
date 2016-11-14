@@ -1,5 +1,6 @@
 #include "ffmpeg.h"
 #include <string>
+#include "generator.h"
 #include <experimental/resumable>
 #include <experimental/generator>
 
@@ -34,6 +35,15 @@ public:
         if(read < 0) break;
         co_yield packet;
     }
+  }
+  auto packets2()
+  {
+	  return qflow::generator<AVPacketPointer>([this](auto par)
+	  {
+		  AVPacketPointer packet(new AVPacket(), AVPacketDeleter());
+		  int read = av_read_frame(_formatContext.get(), packet.get());
+		  if (read == 0) *par = packet;
+	  });
   }
   auto codecpar(unsigned int stream_index)
   {

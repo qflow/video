@@ -15,6 +15,8 @@ extern "C" {
 #include <mutex>
 #include <memory>
 #include <cassert>
+#include "size.h"
+#include "rational.h"
 
 namespace qflow {
 namespace video {
@@ -100,5 +102,12 @@ using AVCodecContextPointer = std::unique_ptr<AVCodecContext, AVCodecContextDele
 using SwsContextPointer = std::unique_ptr<SwsContext, SwsContextDeleter>;
 using AVFramePointer = std::shared_ptr<AVFrame>;
 using AVPacketPointer = std::shared_ptr<AVPacket>;
+
+struct stream_params
+{
+	AVCodecID codec_id;
+	size size;
+	rational sample_rate;
+};
 }
 }
