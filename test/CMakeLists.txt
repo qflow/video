@@ -1,6 +1,5 @@
-cmake_minimum_required(VERSION 3.6)
+cmake_minimum_required(VERSION 3.5)
 project(video_test_all)
-set(CMAKE_EXE_LINKER_FLAGS  -SAFESEH:NO)
 add_executable(${PROJECT_NAME} all.cpp)
 target_link_libraries(${PROJECT_NAME} video)
 target_compile_options(${PROJECT_NAME} PUBLIC "$<$<CXX_COMPILER_ID:MSVC>:-bigobj>")

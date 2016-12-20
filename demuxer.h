@@ -1,8 +1,6 @@
 #include "ffmpeg.h"
 #include <string>
 #include "generator.h"
-#include <experimental/resumable>
-#include <experimental/generator>
 
 namespace qflow {
 namespace video {
@@ -26,7 +24,7 @@ public:
     err = avformat_find_stream_info(_formatContext.get(), NULL);
     int i=0;
   }
-  auto packets()
+  /*auto packets()
   {
     for(;;)
     {
@@ -35,8 +33,8 @@ public:
         if(read < 0) break;
         co_yield packet;
     }
-  }
-  auto packets2()
+  }*/
+  auto packets()
   {
 	  return qflow::generator<AVPacketPointer>([this](auto par)
 	  {

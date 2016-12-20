@@ -1,12 +1,14 @@
 #pragma once
 #include <functional>
-#include <optional>
+#include <experimental/optional>
+
+using std::experimental::optional;
 
 namespace qflow {
 template<typename T>
 struct generator
 {
-	using yield_value = std::optional<T>*;
+	using yield_value = optional<T>*;
 	generator(std::function<void(yield_value)> func) : _f(func)
 	{
 
@@ -18,7 +20,7 @@ struct generator
 
 		}
 		iterator &operator++() {
-			std::optional<T> val;
+			optional<T> val;
 			 _f(&val);
 			 if(val) _current = val.value();
 			 else _done = true;

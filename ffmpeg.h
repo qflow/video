@@ -106,7 +106,7 @@ using AVPacketPointer = std::shared_ptr<AVPacket>;
 struct stream_params
 {
 	AVCodecID codec_id;
-	size size;
+	qflow::size size;
 	rational sample_rate;
 };
 }
