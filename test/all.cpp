@@ -6,6 +6,7 @@
 #include "generator.h"
 #include <future>
 #include <type_traits>
+#include <sstream>
 
 void main_coro() {
   qflow::video::demuxer demux;
@@ -15,7 +16,8 @@ void main_coro() {
   qflow::video::decoder dec(codec);
   qflow::video::converter conv(static_cast<AVPixelFormat>(codec->format), s, AVPixelFormat::AV_PIX_FMT_RGB24, s);
   qflow::video::encoder enc(AVCodecID::AV_CODEC_ID_H264, s, { 30, 1 });
-  qflow::video::muxer mux("mp4", "D:/test.mp4", {enc.codecpar()});
+  std::stringstream ss;
+  qflow::video::muxer<std::stringstream> mux("asf", ss, {enc.codecpar()});
   for (auto packet : demux.packets()) {
     if (packet->stream_index != 0)
       continue;
