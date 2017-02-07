@@ -3,6 +3,7 @@
 #include "converter.h"
 #include "encoder.h"
 #include "muxer.h"
+#include "classifier.h"
 #include "generator.h"
 #include <future>
 #include <type_traits>
@@ -14,7 +15,10 @@ void main_coro() {
   auto codec = demux.codecpar(0);
   qflow::size s = { codec->width, codec->height };
   qflow::video::decoder dec(codec);
-  qflow::video::converter conv(static_cast<AVPixelFormat>(codec->format), s, AVPixelFormat::AV_PIX_FMT_RGB24, s);
+  qflow::video::converter conv(static_cast<AVPixelFormat>(codec->format), s, AVPixelFormat::AV_PIX_FMT_BGR24, {256, 256});
+  qflow::video::classifier clas("/home/michal/workspace/digits/digits/jobs/20160615-092011-01f2", 
+                                "/home/michal/workspace/digits/digits/jobs/20160609-101844-274f/mean.binaryproto", 
+                                "/home/michal/workspace/digits/digits/jobs/20160609-101844-274f/labels.txt");
   qflow::video::encoder enc(AVCodecID::AV_CODEC_ID_H264, s, { 30, 1 });
   std::stringstream ss;
   qflow::video::muxer<std::stringstream> mux("asf", ss, {enc.codecpar()});
@@ -30,6 +34,7 @@ void main_coro() {
 			mux.write(new_packet);
 		}
 		auto rgb = conv.convert(frame);
+        
 	}
   }
   //flush encoder buffer

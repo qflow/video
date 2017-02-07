@@ -7,6 +7,9 @@ file(GLOB_RECURSE SRC_LIST
          ${CMAKE_CURRENT_SOURCE_DIR}/*.h)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
+find_package(Caffe REQUIRED)
+add_definitions(${Caffe_DEFINITIONS})
+
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     find_package(PkgConfig)
     pkg_check_modules(FFMPEG libavformat libavdevice libavcodec libswscale libavfilter libavutil libswresample libpostproc)
@@ -55,6 +58,9 @@ endif()
     link_directories(${PROJECT_BINARY_DIR}/ffmpeg_dev/src/ffmpeg_dev/lib)
     add_dependencies(${PROJECT_NAME} ffmpeg_dev ffmpeg_shared)
 endif()
+
+
+
 enable_testing()
 add_subdirectory(test)
 link_directories(${FFMPEG_LIBRARY_DIRS})
@@ -63,8 +69,8 @@ target_compile_options(${PROJECT_NAME} PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/std:c++
 target_compile_options(${PROJECT_NAME} PUBLIC $<$<CXX_COMPILER_ID:GNU>:-std=c++14>)
 include_directories(${FFMPEG_INCLUDE_DIRS})
 message(STATUS "FFMPEG Libs: " ${FFMPEG_LIBRARIES} " FFMPEG paths: " ${FFMPEG_INCLUDE_DIRS} " " ${FFMPEG_LIBRARY_DIRS})
-target_link_libraries(${PROJECT_NAME} PUBLIC ${FFMPEG_LIBRARIES})
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${FFMPEG_INCLUDE_DIRS})
+target_link_libraries(${PROJECT_NAME} PUBLIC ${FFMPEG_LIBRARIES} ${Caffe_LIBRARIES} stdc++fs)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${FFMPEG_INCLUDE_DIRS} ${Caffe_INCLUDE_DIRS})
 set_property(TARGET ${PROJECT_NAME} PROPERTY FFMPEG_BIN ${FFMPEG_BIN})
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
     install(DIRECTORY ${FFMPEG_BIN}/ DESTINATION . COMPONENT video FILES_MATCHING PATTERN "*.dll")
