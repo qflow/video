@@ -1,0 +1,109 @@
+#include "demuxer.h"
+#include "decoder.h"
+#include "converter.h"
+#include "encoder.h"
+#include "muxer.h"
+#include "classifier.h"
+#include "generator.h"
+#include <gflags/gflags.h>
+
+std::istream& safe_get_line(std::istream& is, std::string& t)
+{
+    t.clear();
+    std::istream::sentry se(is, true);
+    std::streambuf* sb = is.rdbuf();
+
+    for(;;) {
+        int c = sb->sbumpc();
+        switch (c) {
+        case '\n':
+            return is;
+        case '\r':
+            if(sb->sgetc() == '\n')
+                sb->sbumpc();
+            return is;
+        case EOF:
+            if(t.empty())
+                is.setstate(std::ios::eofbit);
+            return is;
+        default:
+            t += (char)c;
+        }
+    }
+}
+int64_t milisecs(std::string time)
+{
+    int64_t res = 0;
+    int hours;
+    int minutes;
+    double secs;
+    std::sscanf(time.c_str(), "%2d:%2d:%10lf", &hours, &minutes, &secs);
+    res = (hours * 3600 * 1E3) + (minutes * 60 * 1E3) + (secs * 1E3);
+    return res;
+}
+
+
+namespace fs = std::experimental::filesystem;
+DEFINE_string(input_file, "/path/to/input.mp4", "path to input video file");
+
+int main(int argc, char *argv[])
+{
+    gflags::SetUsageMessage("converts video file and corresponding clip classification csv file into Digits format");
+    gflags::SetVersionString("1.0.0");
+    gflags::ParseCommandLineFlags(&argc, &argv, true);
+
+    qflow::video::demuxer demux;
+    demux.open(FLAGS_input_file);
+    auto codec = demux.codecpar(0);
+    qflow::size s = { codec->width, codec->height };
+    qflow::video::decoder dec(codec);
+
+
+    fs::path input = FLAGS_input_file;
+    input.replace_extension(".csv");
+    std::ifstream csv;
+    csv.open(input.string());
+    std::string header;
+    std::getline(csv, header);
+    std::string record;
+    while(safe_get_line(csv, record))
+    {
+        std::stringstream rs(record);
+        std::string behavior;
+        std::getline(rs, behavior, ',');
+        std::string start_time;
+        std::getline(rs, start_time, ',');
+        std::string end_time;
+        std::getline(rs, end_time, ',');
+        auto start = milisecs(start_time);
+        auto end = milisecs(end_time);
+
+        qflow::video::encoder enc(AVCodecID::AV_CODEC_ID_H264, s, { 25, 1 });
+        qflow::video::muxer<std::experimental::filesystem::path> mux("asf", "out.mp4", {enc.codecpar()});
+        for (auto packet : demux.packets(start, end)) {
+            if (packet->stream_index != 0)
+                continue;
+            dec.send_packet(packet);
+            while (auto frame = dec.receive_frame())
+            {
+                enc.send_frame(frame);
+                while (auto new_packet = enc.receive_packet())
+                {
+                    mux.write(new_packet);
+                }
+            }
+        }
+        //flush encoder buffer
+        enc.send_frame(qflow::video::AVFramePointer());
+        while (auto new_packet = enc.receive_packet())
+        {
+            mux.write(new_packet);
+        }
+
+    }
+
+
+
+
+    return 0;
+}
