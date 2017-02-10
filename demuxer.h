@@ -50,16 +50,18 @@ public:
     }
     auto packets(int64_t start_milisec, int64_t end_milisec)
     {
+        key_count_ = 0;
         int ds = av_find_default_stream_index(formatContext_.get());
         AVStream* stream = formatContext_->streams[ds];
         auto timestamp = av_rescale_q(start_milisec, milisec_scale, stream->time_base);
         int res = av_seek_frame(formatContext_.get(), ds,
-                      timestamp + stream->start_time, AVSEEK_FLAG_BACKWARD);
+                      timestamp + stream->start_time, 0);
         
         return qflow::generator<AVPacketPointer>([this, end_milisec](auto par)
         {
             AVPacketPointer packet(new AVPacket(), AVPacketDeleter());
             int read = av_read_frame(formatContext_.get(), packet.get());
+            if(packet->flags & AV_PKT_FLAG_KEY) key_count_++;
 
             AVStream* stream = formatContext_->streams[packet->stream_index];
             auto miliseconds = av_rescale_q(packet->pts - stream->start_time, stream->time_base, milisec_scale);
@@ -76,6 +78,7 @@ public:
 private:
     AVFormatContextPointer formatContext_;
     AVRational milisec_scale = {1, (int)1E3};
+    int key_count_;
 };
 }
 }
