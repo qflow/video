@@ -10,13 +10,13 @@ public:
 	encoder(AVCodecID codec_id, size s, rational framerate)
 	{
 		AVCodec* codec = avcodec_find_encoder(codec_id);
-		_context.reset(avcodec_alloc_context3(codec));
-		_context->width = s.width;
-		_context->height = s.height;
+		      context_.reset(avcodec_alloc_context3(codec));
+		      context_->width = s.width;
+		      context_->height = s.height;
 		AVRational timeBase = { framerate.den, framerate.num };
-		_context->time_base = timeBase;
-		_context->pix_fmt = codec->pix_fmts[0];
-		int ret = avcodec_open2(_context.get(), codec, nullptr);
+		      context_->time_base = timeBase;
+		      context_->pix_fmt = codec->pix_fmts[0];
+		int ret = avcodec_open2(context_.get(), codec, nullptr);
 		if (ret < 0)
 		{
 			char* errBuf = new char[255];
@@ -28,7 +28,7 @@ public:
 	void send_frame(AVFramePointer frame)
 	{
 		if(frame) frame->pts = _pts;
-		int err = avcodec_send_frame(_context.get(), frame.get());
+		int err = avcodec_send_frame(context_.get(), frame.get());
 		if (err < 0)
 		{
 			char* errBuf = new char[255];
@@ -42,7 +42,7 @@ public:
 		av_init_packet(packet.get());
 		packet.get()->data = NULL;
 		packet.get()->size = 0;
-		int err = avcodec_receive_packet(_context.get(), packet.get());
+		int err = avcodec_receive_packet(context_.get(), packet.get());
 		if (err == 0) {
 			return packet;
 		}
@@ -51,11 +51,11 @@ public:
 	auto codecpar()
 	{
 		AVCodecParameters* par = avcodec_parameters_alloc();
-		avcodec_parameters_from_context(par, _context.get());
+		avcodec_parameters_from_context(par, context_.get());
 		return par;
 	}
 private:
-	AVCodecContextPointer _context;
+	AVCodecContextPointer context_;
 	size _size;
 	rational _framerate;
 	int _bitrate;

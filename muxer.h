@@ -71,6 +71,7 @@ public:
     {
         init(format, streams);
         AVIOContext* ctx = NULL;
+        auto a = filename.string();
         int ret = avio_open(&ctx, filename.c_str(), AVIO_FLAG_WRITE);
         _formatContext->pb = ctx;
         ret = avformat_write_header(_formatContext.get(), NULL);

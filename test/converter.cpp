@@ -6,6 +6,7 @@
 #include "classifier.h"
 #include "generator.h"
 #include <gflags/gflags.h>
+#include <algorithm>
 
 std::istream& safe_get_line(std::istream& is, std::string& t)
 {
@@ -45,6 +46,7 @@ int64_t milisecs(std::string time)
 
 namespace fs = std::experimental::filesystem;
 DEFINE_string(input_file, "/path/to/input.mp4", "path to input video file");
+DEFINE_string(output_folder, "/path/to/folder", "path to output folder");
 
 int main(int argc, char *argv[])
 {
@@ -57,6 +59,7 @@ int main(int argc, char *argv[])
     auto codec = demux.codecpar(0);
     qflow::size s = { codec->width, codec->height };
     qflow::video::decoder dec(codec);
+    qflow::video::converter conv(static_cast<AVPixelFormat>(codec->format), s, AVPixelFormat::AV_PIX_FMT_BGR24, {256, 256});
 
 
     fs::path input = FLAGS_input_file;
@@ -68,6 +71,7 @@ int main(int argc, char *argv[])
     std::string record;
     while(safe_get_line(csv, record))
     {
+        dec.flush();
         std::stringstream rs(record);
         std::string behavior;
         std::getline(rs, behavior, ',');
@@ -77,15 +81,28 @@ int main(int argc, char *argv[])
         std::getline(rs, end_time, ',');
         auto start = milisecs(start_time);
         auto end = milisecs(end_time);
+        
+        auto framerate = demux.frame_rate(0);
 
-        qflow::video::encoder enc(AVCodecID::AV_CODEC_ID_H264, s, { 25, 1 });
-        qflow::video::muxer<std::experimental::filesystem::path> mux("asf", "out.mp4", {enc.codecpar()});
+        std::replace(behavior.begin(), behavior.end(), ' ', '_');
+        std::string dir = FLAGS_output_folder + "/" + behavior;
+        fs::create_directories(dir);
+        std::string out =  dir + "/" + input.stem().string() + "-" + start_time;
+        std::remove(out.begin(), out.end(), '.');
+        std::remove(out.begin(), out.end(), ':');
+        
+        out += ".mp4";
+        
+        
+        qflow::video::encoder enc(AVCodecID::AV_CODEC_ID_H264, s, framerate);
+        qflow::video::muxer<std::experimental::filesystem::path> mux("asf", out, {enc.codecpar()});
         for (auto packet : demux.packets(start, end)) {
             if (packet->stream_index != 0)
                 continue;
             dec.send_packet(packet);
             while (auto frame = dec.receive_frame())
             {
+                auto rgb = conv.convert(frame);
                 enc.send_frame(frame);
                 while (auto new_packet = enc.receive_packet())
                 {

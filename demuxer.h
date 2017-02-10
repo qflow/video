@@ -22,7 +22,7 @@ public:
             int i = 0;
         }
         err = avformat_find_stream_info(formatContext_.get(), NULL);
-        int i=0;
+        
     }
     /*auto packets()
     {
@@ -34,6 +34,11 @@ public:
           co_yield packet;
       }
     }*/
+    rational frame_rate(unsigned int stream_index)
+    {
+        AVRational avr = av_guess_frame_rate(formatContext_.get(), formatContext_->streams[stream_index], NULL);
+        return rational {avr.num, avr.den};
+    }
     auto packets()
     {
         return qflow::generator<AVPacketPointer>([this](auto par)
@@ -55,7 +60,6 @@ public:
         {
             AVPacketPointer packet(new AVPacket(), AVPacketDeleter());
             int read = av_read_frame(formatContext_.get(), packet.get());
-            
 
             AVStream* stream = formatContext_->streams[packet->stream_index];
             auto miliseconds = av_rescale_q(packet->pts - stream->start_time, stream->time_base, milisec_scale);
