@@ -7,6 +7,7 @@
 #include "generator.h"
 #include <gflags/gflags.h>
 #include <algorithm>
+#include <set>
 
 std::istream& safe_get_line(std::istream& is, std::string& t)
 {
@@ -42,6 +43,14 @@ int64_t milisecs(std::string time)
     res = (hours * 3600 * 1E3) + (minutes * 60 * 1E3) + (secs * 1E3);
     return res;
 }
+std::ostream& operator<<(std::ostream& os, const std::set<std::string>& set)  
+{  
+    for(auto e: set)
+    {
+        os << e << '\n';
+    }
+    return os; 
+}
 
 
 namespace fs = std::experimental::filesystem;
@@ -69,12 +78,18 @@ int main(int argc, char *argv[])
     std::string header;
     std::getline(csv, header);
     std::string record;
+    std::set<std::string> behaviors;
+    std::ofstream out_labels;
+    fs::create_directories(FLAGS_output_folder);
+    out_labels.open(FLAGS_output_folder + "/labels.txt");
     while(safe_get_line(csv, record))
     {
         dec.flush();
         std::stringstream rs(record);
         std::string behavior;
         std::getline(rs, behavior, ',');
+        if(behavior.empty()) continue;
+        behaviors.insert(behavior);
         std::string start_time;
         std::getline(rs, start_time, ',');
         std::string end_time;
@@ -82,7 +97,8 @@ int main(int argc, char *argv[])
         auto start = milisecs(start_time);
         auto end = milisecs(end_time);
         
-        auto framerate = demux.frame_rate(0);
+        int stream_index = 0;
+        auto framerate = demux.frame_rate(stream_index);
 
         std::replace(behavior.begin(), behavior.end(), ' ', '_');
         std::string dir = FLAGS_output_folder + "/" + behavior;
@@ -97,11 +113,13 @@ int main(int argc, char *argv[])
         qflow::video::encoder enc(AVCodecID::AV_CODEC_ID_H264, s, framerate);
         qflow::video::muxer<std::experimental::filesystem::path> mux("asf", out, {enc.codecpar()});
         for (auto packet : demux.packets(start, end)) {
-            if (packet->stream_index != 0)
+            if (packet->stream_index != stream_index)
                 continue;
             dec.send_packet(packet);
             while (auto frame = dec.receive_frame())
             {
+                auto timestamp = demux.timestamp_miliseconds(frame->pts, stream_index);
+                if(timestamp < start || timestamp > end) continue;
                 auto rgb = conv.convert(frame);
                 enc.send_frame(frame);
                 while (auto new_packet = enc.receive_packet())
@@ -119,7 +137,7 @@ int main(int argc, char *argv[])
 
     }
 
-
+    out_labels << behaviors;
 
 
     return 0;

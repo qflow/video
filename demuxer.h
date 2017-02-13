@@ -55,7 +55,7 @@ public:
         AVStream* stream = formatContext_->streams[ds];
         auto timestamp = av_rescale_q(start_milisec, milisec_scale, stream->time_base);
         int res = av_seek_frame(formatContext_.get(), ds,
-                      timestamp + stream->start_time, 0);
+                      timestamp + stream->start_time -  2 * stream->time_base.den, 0);
         
         return qflow::generator<AVPacketPointer>([this, end_milisec](auto par)
         {
@@ -66,8 +66,13 @@ public:
             AVStream* stream = formatContext_->streams[packet->stream_index];
             auto miliseconds = av_rescale_q(packet->pts - stream->start_time, stream->time_base, milisec_scale);
             
-            if (read == 0 && miliseconds < end_milisec) *par = packet;
+            if ((read == 0 && miliseconds < end_milisec) || (key_count_ < 2)) *par = packet;
         });
+    }
+    auto timestamp_miliseconds(int64_t t, int stream_index)
+    {
+        AVStream* stream = formatContext_->streams[stream_index];
+        return av_rescale_q(t - stream->start_time, stream->time_base, milisec_scale);
     }
     auto codecpar(unsigned int stream_index)
     {
