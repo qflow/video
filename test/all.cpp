@@ -8,21 +8,22 @@
 
 void main_coro() {
   qflow::video::demuxer demux;
-  demux.open("big.mp4");
-  auto codec = demux.codecpar(1);
+  int stream_index = 0;
+  demux.open("/dev/video0");
+  auto codec = demux.codecpar(stream_index);
   qflow::size s = { codec->width, codec->height };
   qflow::video::decoder dec(codec);
-  qflow::video::converter conv(static_cast<AVPixelFormat>(codec->format), s, AVPixelFormat::AV_PIX_FMT_BGR24, {256, 256});
+  qflow::video::converter conv(static_cast<AVPixelFormat>(codec->format), s, AVPixelFormat::AV_PIX_FMT_YUV420P, s);
   qflow::video::encoder enc(AVCodecID::AV_CODEC_ID_H264, s, { 25, 1 });
   qflow::video::muxer<std::experimental::filesystem::path> mux("asf", "out.mp4", {enc.codecpar()});
-  for (auto packet : demux.packets(14000, 20000)) {
-    if (packet->stream_index != 1)
+  for (auto packet : demux.packets()) {
+    if (packet->stream_index != stream_index)
       continue;
 	dec.send_packet(packet);
 	while (auto frame = dec.receive_frame())
 	{
-        auto rgb = conv.convert(frame);
-		enc.send_frame(frame);
+        auto yuv = conv.convert(frame);
+		enc.send_frame(yuv);
 		while (auto new_packet = enc.receive_packet())
 		{
 			mux.write(new_packet);

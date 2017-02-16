@@ -2,6 +2,7 @@
 #include "ffmpeg.h"
 #include "size.h"
 #include "rational.h"
+#include <iostream>
 
 namespace qflow {
 namespace video {
@@ -25,7 +26,7 @@ public:
 		}
 		int i = 0;
 	}
-	void send_frame(AVFramePointer frame)
+	int send_frame(AVFramePointer frame)
 	{
 		if(frame) frame->pts = _pts;
 		int err = avcodec_send_frame(context_.get(), frame.get());
@@ -33,8 +34,10 @@ public:
 		{
 			char* errBuf = new char[255];
 			av_strerror(err, errBuf, 255);
+            std::cout << errBuf;
 		}
 		_pts++;
+        return err;
 	}
 	AVPacketPointer receive_packet()
 	{
