@@ -5,11 +5,13 @@
 #include "muxer.h"
 #include "classifier.h"
 #include "generator.h"
+#include <wamp2/wamp_router.h>
 
 void main_coro() {
   qflow::video::demuxer demux;
   int stream_index = 0;
   demux.open("/dev/video0");
+  
   auto codec = demux.codecpar(stream_index);
   qflow::size s = { codec->width, codec->height };
   qflow::video::decoder dec(codec);

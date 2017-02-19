@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.5)
 include(ExternalProject)
 project(video)
 add_subdirectory(wamp2)
-file(GLOB_RECURSE SRC_LIST
+file(GLOB SRC_LIST
          RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
          ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
          ${CMAKE_CURRENT_SOURCE_DIR}/*.h)
