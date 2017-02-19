@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
 include(ExternalProject)
 project(video)
+add_subdirectory(wamp2)
 file(GLOB_RECURSE SRC_LIST
          RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
          ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
@@ -63,13 +64,15 @@ endif()
 
 enable_testing()
 add_subdirectory(test)
+set(WAMP2_BUILD_TESTS OFF)
 link_directories(${FFMPEG_LIBRARY_DIRS})
 add_library(${PROJECT_NAME} STATIC ${SRC_LIST})
 target_compile_options(${PROJECT_NAME} PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/std:c++latest /await>)
 target_compile_options(${PROJECT_NAME} PUBLIC $<$<CXX_COMPILER_ID:GNU>:-std=c++14>)
 include_directories(${FFMPEG_INCLUDE_DIRS})
 message(STATUS "FFMPEG Libs: " ${FFMPEG_LIBRARIES} " FFMPEG paths: " ${FFMPEG_INCLUDE_DIRS} " " ${FFMPEG_LIBRARY_DIRS})
-target_link_libraries(${PROJECT_NAME} PUBLIC ${FFMPEG_LIBRARIES} ${Caffe_LIBRARIES} stdc++fs)
+add_dependencies(${PROJECT_NAME} wamp2)
+target_link_libraries(${PROJECT_NAME} PUBLIC wamp2 ${FFMPEG_LIBRARIES} ${Caffe_LIBRARIES} stdc++fs)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} ${FFMPEG_INCLUDE_DIRS} ${Caffe_INCLUDE_DIRS})
 set_property(TARGET ${PROJECT_NAME} PROPERTY FFMPEG_BIN ${FFMPEG_BIN})
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")

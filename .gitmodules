@@ -1,0 +1,3 @@
+[submodule "wamp2"]
+	path = wamp2
+	url = https://github.com/qflow/wamp2.git
