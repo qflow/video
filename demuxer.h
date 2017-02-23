@@ -1,5 +1,6 @@
 #include "ffmpeg.h"
 #include <string>
+#include <iostream>
 #include "generator.h"
 
 namespace qflow {
@@ -10,6 +11,10 @@ public:
     {
 
     }
+    ~demuxer()
+    {
+        
+    }
     void open(std::string filename) {
         initFfmpeg();
         formatContext_.reset(avformat_alloc_context());
@@ -19,9 +24,10 @@ public:
         {
             char* errBuf = new char[255];
             av_strerror(err, errBuf, 255);
-            int i = 0;
+            throw std::runtime_error(filename + " " + errBuf);
         }
         err = avformat_find_stream_info(formatContext_.get(), NULL);
+        int t=0;
         
     }
     /*auto packets()

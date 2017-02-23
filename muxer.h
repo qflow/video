@@ -49,10 +49,12 @@ private:
     static int writePacket(void *opaque, uint8_t *buf, int buf_size)     
     {
         muxer* mux = static_cast<muxer*>(opaque);
+        std::string str = std::string(reinterpret_cast<const char*>(buf), buf_size);
         if(mux->_header.empty())
         {
-            mux->_header = std::string(reinterpret_cast<const char*>(buf), buf_size);
+            mux->_header = str;
         }
+        mux->_ostream << str;
         return buf_size;
     }
     AVFormatContextPointer _formatContext;

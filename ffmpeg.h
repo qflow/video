@@ -56,7 +56,7 @@ struct AVFormatContextDeleter {
         delete[] context->pb->buffer;
         av_free(context->pb);
       }
-      avformat_close_input(&context);
+      if(context->streams) avformat_close_input(&context);
     }
   }
 };

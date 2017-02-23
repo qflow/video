@@ -8,39 +8,16 @@
 #include <wamp2/wamp_router.h>
 #include <boost/signals2/signal.hpp>
 #include <boost/thread/thread.hpp>
+#include <sstream>
+#include <chrono>
+#include <boost/asio/use_future.hpp>
+#include "queue.h"
 
-class video_session : public std::enable_shared_from_this<video_session>
-{
-public:
-    explicit video_session(tcp::socket socket)
-        : socket_(std::move(socket)), strand_(socket_.get_io_service())
-    {
-    }
-    void operator()()
-    {
-        auto self(shared_from_this());
-        boost::asio::spawn(strand_,
-                           [this, self](boost::asio::yield_context yield)
-        {
-            tcp::socket sock {socket_.get_io_service()};
-            req_type req;
-            try
-            {
 
-            }
-            catch (boost::system::system_error& e)
-            {
-                auto message = e.what();
-                std::cout << message << "\n\n";
-            }
-        });
-    }
-private:
-    tcp::socket socket_;
-    boost::asio::io_service::strand strand_;
-};
 
 int main() {
+
+    using namespace std::chrono_literals;
 
     boost::thread_group threadpool;
     boost::asio::io_service io_service;
@@ -51,41 +28,103 @@ int main() {
             boost::bind(&boost::asio::io_service::run, &io_service)
         );
     }
-    qflow::tcp_server<video_session>(io_service, "0.0.0.0", "80")();
 
-    qflow::video::demuxer demux;
-    int stream_index = 0;
-    demux.open("/dev/video0");
-    boost::signals2::signal<void (qflow::video::AVPacketPointer)> sig;
-    auto codec = demux.codecpar(stream_index);
-    qflow::size s = { codec->width, codec->height };
-    qflow::video::decoder dec(codec);
-    qflow::video::converter conv(static_cast<AVPixelFormat>(codec->format), s, AVPixelFormat::AV_PIX_FMT_YUV420P, s);
-    qflow::video::encoder enc(AVCodecID::AV_CODEC_ID_H264, s, { 25, 1 });
-    qflow::video::muxer<std::experimental::filesystem::path> mux("asf", "out.mp4", {enc.codecpar()});
-    for (auto packet : demux.packets()) {
-        if (packet->stream_index != stream_index)
-            continue;
-        dec.send_packet(packet);
-        while (auto frame = dec.receive_frame())
-        {
-            auto yuv = conv.convert(frame);
-            enc.send_frame(yuv);
-            while (auto new_packet = enc.receive_packet())
-            {
-                sig(new_packet);
-                mux.write(new_packet);
-            }
-
-        }
-    }
-
-    //flush encoder buffer
-    enc.send_frame(qflow::video::AVFramePointer());
-    while (auto new_packet = enc.receive_packet())
+    qflow::queue<std::tuple<std::string, std::string>> q;
+    boost::signals2::signal<void (std::tuple<std::string, std::string>)> sig;
+    for(int i=0; i<9; i++)
     {
-        mux.write(new_packet);
+        std::thread t([&, i]() {
+            try {
+                qflow::video::demuxer demux;
+                int stream_index = 0;
+                std::string name = "video" + std::to_string(i);
+                std::cout << "Encoder " + name + " starting\n";
+                demux.open("/dev/" + name);
+                auto codec = demux.codecpar(stream_index);
+                qflow::size s = { codec->width, codec->height };
+                qflow::video::decoder dec(codec);
+                qflow::video::converter conv(static_cast<AVPixelFormat>(codec->format), s, AVPixelFormat::AV_PIX_FMT_YUV420P, s);
+                qflow::video::encoder enc(AVCodecID::AV_CODEC_ID_H264, s, { 25, 1 });
+                std::stringstream os;
+                qflow::video::muxer<std::stringstream> mux("asf", os, {enc.codecpar()});
+                std::cout << "Encoder " + name + " started\n";
+                for (auto packet : demux.packets()) {
+                    if (packet->stream_index != stream_index)
+                        continue;
+                    dec.send_packet(packet);
+                    while (auto frame = dec.receive_frame())
+                    {
+                        auto yuv = conv.convert(frame);
+                        enc.send_frame(yuv);
+                        while (auto new_packet = enc.receive_packet())
+                        {
+                            mux.write(new_packet);
+                            std::string str(std::istreambuf_iterator<char>(os), {});
+                            if(!str.empty())
+                            {
+                                q.push(std::make_tuple(name, str));
+                            }
+                        }
+
+                    }
+                }
+            }
+            catch(const std::exception& e)
+            {
+                std::string message = e.what();
+                std::cout << message;
+            }
+        });
+        t.detach();
     }
-    
+
+
+
+
+
+
+    boost::asio::spawn(io_service,
+                       [&](boost::asio::yield_context yield)
+    {
+        try
+        {
+
+            std::string const host = "40.217.1.18";//demo.crossbar.io
+            boost::asio::ip::tcp::resolver r {io_service};
+            boost::asio::ip::tcp::socket sock {io_service};
+            using stream_type = boost::asio::ip::tcp::socket;
+            beast::websocket::stream<stream_type&> ws {sock};
+            ws.set_option(beast::websocket::decorate(qflow::protocol {qflow::KEY_WAMP_MSGPACK_SUB}));
+            ws.set_option(beast::websocket::message_type {beast::websocket::opcode::binary});
+            qflow::wamp_stream<beast::websocket::stream<stream_type&>&, qflow::msgpack_serializer> wamp {ws};
+
+            auto i = r.async_resolve(boost::asio::ip::tcp::resolver::query {host, "8080"}, yield);
+            boost::asio::async_connect(sock, i, yield);
+            ws.async_handshake(host, "/ws",yield);
+            wamp.async_handshake("realm1", yield);
+
+            q.flush();
+            for(;;)
+            {
+                boost::asio::deadline_timer t(io_service, boost::posix_time::seconds(1));
+                t.async_wait(yield);
+                auto data = q.pull();
+                for(auto e: data)
+                {
+                    std::string uri = std::get<0>(e) + ".data";
+                    wamp.async_publish(uri, false, yield, std::get<1>(e));
+                }
+            }
+        }
+        catch (const std::exception& e)
+        {
+            auto message = e.what();
+            std::cout << message << "\n\n";
+        }
+    });
+
+
+
+    threadpool.join_all();
     return 0;
 }
