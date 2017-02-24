@@ -2,10 +2,12 @@
 #include <string>
 #include <iostream>
 #include "generator.h"
+#include <map>
 
 namespace qflow {
 namespace video {
 class demuxer {
+    using options_type = std::map<std::string, std::string>;
 public:
     demuxer()
     {
@@ -15,11 +17,17 @@ public:
     {
         
     }
-    void open(std::string filename) {
+    void open(std::string filename, const options_type& options = options_type{} ) {
         initFfmpeg();
         formatContext_.reset(avformat_alloc_context());
         AVFormatContext* ctx = formatContext_.get();
-        int err = avformat_open_input(&ctx, filename.c_str(), NULL, NULL);
+        AVDictionary* dict = NULL;
+        int err;
+        for(auto opt: options)
+        {
+            err = av_dict_set(&dict, opt.first.c_str(), opt.second.c_str(), 0);
+        }
+        err = avformat_open_input(&ctx, filename.c_str(), NULL, &dict);
         if(err < 0)
         {
             char* errBuf = new char[255];

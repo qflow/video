@@ -12,12 +12,16 @@
 #include <chrono>
 #include <boost/asio/use_future.hpp>
 #include "queue.h"
+#include <unistd.h>
+#include <limits.h>
 
 
 
 int main() {
 
     using namespace std::chrono_literals;
+    char hostname[HOST_NAME_MAX];
+    gethostname(hostname, HOST_NAME_MAX);
 
     boost::thread_group threadpool;
     boost::asio::io_service io_service;
@@ -39,14 +43,14 @@ int main() {
                 int stream_index = 0;
                 std::string name = "video" + std::to_string(i);
                 std::cout << "Encoder " + name + " starting\n";
-                demux.open("/dev/" + name);
+                demux.open("/dev/" + name, {{"standard", "PAL"}});
                 auto codec = demux.codecpar(stream_index);
                 qflow::size s = { codec->width, codec->height };
                 qflow::video::decoder dec(codec);
                 qflow::video::converter conv(static_cast<AVPixelFormat>(codec->format), s, AVPixelFormat::AV_PIX_FMT_YUV420P, s);
-                qflow::video::encoder enc(AVCodecID::AV_CODEC_ID_H264, s, { 25, 1 });
+                qflow::video::encoder enc(AVCodecID::AV_CODEC_ID_VP8, s, { 25, 1 });
                 std::stringstream os;
-                qflow::video::muxer<std::stringstream> mux("asf", os, {enc.codecpar()});
+                qflow::video::muxer<std::stringstream> mux("webm", os, {enc.codecpar()});
                 std::cout << "Encoder " + name + " started\n";
                 for (auto packet : demux.packets()) {
                     if (packet->stream_index != stream_index)
@@ -86,40 +90,45 @@ int main() {
     boost::asio::spawn(io_service,
                        [&](boost::asio::yield_context yield)
     {
-        try
+        for(;;)
         {
-
-            std::string const host = "40.217.1.18";//demo.crossbar.io
-            boost::asio::ip::tcp::resolver r {io_service};
-            boost::asio::ip::tcp::socket sock {io_service};
-            using stream_type = boost::asio::ip::tcp::socket;
-            beast::websocket::stream<stream_type&> ws {sock};
-            ws.set_option(beast::websocket::decorate(qflow::protocol {qflow::KEY_WAMP_MSGPACK_SUB}));
-            ws.set_option(beast::websocket::message_type {beast::websocket::opcode::binary});
-            qflow::wamp_stream<beast::websocket::stream<stream_type&>&, qflow::msgpack_serializer> wamp {ws};
-
-            auto i = r.async_resolve(boost::asio::ip::tcp::resolver::query {host, "8080"}, yield);
-            boost::asio::async_connect(sock, i, yield);
-            ws.async_handshake(host, "/ws",yield);
-            wamp.async_handshake("realm1", yield);
-
-            q.flush();
-            for(;;)
+            try
             {
-                boost::asio::deadline_timer t(io_service, boost::posix_time::seconds(1));
-                t.async_wait(yield);
-                auto data = q.pull();
-                for(auto e: data)
+
+                std::string const host = "40.217.1.18";//demo.crossbar.io
+                boost::asio::ip::tcp::resolver r {io_service};
+                boost::asio::ip::tcp::socket sock {io_service};
+                using stream_type = boost::asio::ip::tcp::socket;
+                beast::websocket::stream<stream_type&> ws {sock};
+                ws.set_option(beast::websocket::decorate(qflow::protocol {qflow::KEY_WAMP_MSGPACK_SUB}));
+                ws.set_option(beast::websocket::message_type {beast::websocket::opcode::binary});
+                qflow::wamp_stream<beast::websocket::stream<stream_type&>&, qflow::msgpack_serializer> wamp {ws};
+
+                auto i = r.async_resolve(boost::asio::ip::tcp::resolver::query {host, "8080"}, yield);
+                boost::asio::async_connect(sock, i, yield);
+                ws.async_handshake(host, "/ws",yield);
+                wamp.async_handshake("realm1", yield);
+
+                q.flush();
+                for(;;)
                 {
-                    std::string uri = std::get<0>(e) + ".data";
-                    wamp.async_publish(uri, false, yield, std::get<1>(e));
+                    boost::asio::deadline_timer t(io_service, boost::posix_time::seconds(1));
+                    t.async_wait(yield);
+                    auto data = q.pull();
+                    for(auto e: data)
+                    {
+                        std::string uri = std::string(hostname) + "." + std::get<0>(e) + ".data";
+                        wamp.async_publish(uri, false, yield, std::get<1>(e));
+                    }
                 }
             }
-        }
-        catch (const std::exception& e)
-        {
-            auto message = e.what();
-            std::cout << message << "\n\n";
+            catch (const std::exception& e)
+            {
+                auto message = e.what();
+                std::cout << message << "\n\n";
+            }
+            boost::asio::deadline_timer t(io_service, boost::posix_time::seconds(5));
+            t.async_wait(yield);
         }
     });
 
