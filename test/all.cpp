@@ -16,6 +16,71 @@
 #include <limits.h>
 
 
+class encoder
+{
+public:
+    encoder()
+    {
+    }
+    encoder(const encoder& other)
+    {
+    }
+    void start(int i)
+    {
+        std::thread t([&, i]() {
+            try {
+                qflow::video::demuxer demux;
+                int stream_index = 0;
+                std::string name = "video" + std::to_string(i);
+                std::cout << "Encoder " + name + " starting\n";
+                demux.open("/dev/" + name, {{"standard", "PAL"}});
+                auto codec = demux.codecpar(stream_index);
+                qflow::size s = { codec->width, codec->height };
+                qflow::video::decoder dec(codec);
+                qflow::video::converter conv(static_cast<AVPixelFormat>(codec->format), s, AVPixelFormat::AV_PIX_FMT_YUV420P, s);
+                qflow::video::encoder enc(AVCodecID::AV_CODEC_ID_VP8, s, { 25, 1 });
+                std::stringstream os;
+                qflow::video::muxer<std::stringstream> mux("webm", os, {enc.codecpar()});
+                header_ = mux.header();
+                std::cout << "Encoder " + name + " started\n";
+                for (auto packet : demux.packets()) {
+                    if (packet->stream_index != stream_index)
+                        continue;
+                    dec.send_packet(packet);
+                    while (auto frame = dec.receive_frame())
+                    {
+                        auto yuv = conv.convert(frame);
+                        enc.send_frame(yuv);
+                        while (auto new_packet = enc.receive_packet())
+                        {
+                            mux.write(new_packet);
+                            std::string str(std::istreambuf_iterator<char>(os), {});
+                            if(!str.empty())
+                            {
+                                live(std::make_tuple(name, str));
+                            }
+                        }
+
+                    }
+                }
+            }
+            catch(const std::exception& e)
+            {
+                std::string message = e.what();
+                std::cout << message;
+            }
+        });
+        t.detach();
+    }
+    boost::signals2::signal<void (std::tuple<std::string, std::string>)> live;
+    std::string header() const
+    {
+        return header_;
+    }
+private:
+    std::string header_;
+
+};
 
 int main() {
 
@@ -34,52 +99,16 @@ int main() {
     }
 
     qflow::queue<std::tuple<std::string, std::string>> q;
-    boost::signals2::signal<void (std::tuple<std::string, std::string>)> sig;
-    for(int i=0; i<9; i++)
+    
+    int size = 9;
+    std::vector<encoder> encoders(size, encoder());
+    
+    for(int i=0; i<size; i++)
     {
-        std::thread t([&, i]() {
-            try {
-                qflow::video::demuxer demux;
-                int stream_index = 0;
-                std::string name = "video" + std::to_string(i);
-                std::cout << "Encoder " + name + " starting\n";
-                demux.open("/dev/" + name, {{"standard", "PAL"}});
-                auto codec = demux.codecpar(stream_index);
-                qflow::size s = { codec->width, codec->height };
-                qflow::video::decoder dec(codec);
-                qflow::video::converter conv(static_cast<AVPixelFormat>(codec->format), s, AVPixelFormat::AV_PIX_FMT_YUV420P, s);
-                qflow::video::encoder enc(AVCodecID::AV_CODEC_ID_VP8, s, { 25, 1 });
-                std::stringstream os;
-                qflow::video::muxer<std::stringstream> mux("webm", os, {enc.codecpar()});
-                std::cout << "Encoder " + name + " started\n";
-                for (auto packet : demux.packets()) {
-                    if (packet->stream_index != stream_index)
-                        continue;
-                    dec.send_packet(packet);
-                    while (auto frame = dec.receive_frame())
-                    {
-                        auto yuv = conv.convert(frame);
-                        enc.send_frame(yuv);
-                        while (auto new_packet = enc.receive_packet())
-                        {
-                            mux.write(new_packet);
-                            std::string str(std::istreambuf_iterator<char>(os), {});
-                            if(!str.empty())
-                            {
-                                q.push(std::make_tuple(name, str));
-                            }
-                        }
-
-                    }
-                }
-            }
-            catch(const std::exception& e)
-            {
-                std::string message = e.what();
-                std::cout << message;
-            }
+        encoders[i].start(i);
+        encoders[i].live.connect([&](auto arg){
+            q.push(arg);
         });
-        t.detach();
     }
 
 
@@ -108,6 +137,11 @@ int main() {
                 boost::asio::async_connect(sock, i, yield);
                 ws.async_handshake(host, "/ws",yield);
                 wamp.async_handshake("realm1", yield);
+                
+                for(int i=0;i<size;i++)
+                {
+                    
+                }
 
                 q.flush();
                 for(;;)

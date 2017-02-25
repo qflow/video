@@ -33,6 +33,10 @@ public:
         av_packet_rescale_ts(packet.get(), fpsScale, _formatContext->streams[packet->stream_index]->time_base);
         int ret = av_write_frame(_formatContext.get(), packet.get());
     }
+    std::string header() const
+    {
+        return header_;
+    }    
 private:
         void init(const std::string& format, const std::vector<AVCodecParameters*>& streams)
     {
@@ -50,16 +54,16 @@ private:
     {
         muxer* mux = static_cast<muxer*>(opaque);
         std::string str = std::string(reinterpret_cast<const char*>(buf), buf_size);
-        if(mux->_header.empty())
+        if(mux->header_.empty())
         {
-            mux->_header = str;
+            mux->header_ = str;
         }
         mux->_ostream << str;
         return buf_size;
     }
     AVFormatContextPointer _formatContext;
     T& _ostream;
-    std::string _header;
+    std::string header_;
 };
 
 
