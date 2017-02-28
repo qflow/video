@@ -27,11 +27,12 @@ public:
     }
     void start(int i)
     {
+        index_ = i;
         std::thread t([&, i]() {
             try {
                 qflow::video::demuxer demux;
                 int stream_index = 0;
-                std::string name = "video" + std::to_string(i);
+                std::string name = this->name();
                 std::cout << "Encoder " + name + " starting\n";
                 demux.open("/dev/" + name, {{"standard", "PAL"}});
                 auto codec = demux.codecpar(stream_index);
@@ -54,10 +55,11 @@ public:
                         while (auto new_packet = enc.receive_packet())
                         {
                             mux.write(new_packet);
-                            std::string str(std::istreambuf_iterator<char>(os), {});
-                            if(!str.empty())
+                            std::vector<char> vec(std::istreambuf_iterator<char>(os), {});
+                            auto a = vec.size();
+                            if(!vec.empty())
                             {
-                                live(std::make_tuple(name, str));
+                                live(std::make_tuple(name, vec));
                             }
                         }
 
@@ -72,13 +74,18 @@ public:
         });
         t.detach();
     }
-    boost::signals2::signal<void (std::tuple<std::string, std::string>)> live;
+    boost::signals2::signal<void (std::tuple<std::string, std::vector<char>>)> live;
     std::string header() const
     {
         return header_;
     }
+    std::string name() const
+    {
+        return "video" + std::to_string(index_);
+    }
 private:
     std::string header_;
+    int index_;
 
 };
 
@@ -99,16 +106,13 @@ int main() {
     }
 
     qflow::queue<std::tuple<std::string, std::string>> q;
-    
+
     int size = 9;
     std::vector<encoder> encoders(size, encoder());
-    
+
     for(int i=0; i<size; i++)
     {
         encoders[i].start(i);
-        encoders[i].live.connect([&](auto arg){
-            q.push(arg);
-        });
     }
 
 
@@ -121,6 +125,7 @@ int main() {
     {
         for(;;)
         {
+            std::vector<boost::signals2::connection> connections;
             try
             {
 
@@ -137,10 +142,39 @@ int main() {
                 boost::asio::async_connect(sock, i, yield);
                 ws.async_handshake(host, "/ws",yield);
                 wamp.async_handshake("realm1", yield);
-                
-                for(int i=0;i<size;i++)
+
+                boost::asio::io_service::strand strand(io_service);
+                for(int i=0; i<size; i++)
                 {
-                    
+                    auto con = encoders[i].live.connect([&](auto arg) {
+                        std::string uri = std::string(hostname) + "." + std::get<0>(arg);
+                        boost::asio::spawn(io_service,
+                                           [&wamp, uri, arg](boost::asio::yield_context yield2)
+                        {
+                            try {
+                                wamp.async_publish(uri + ".data", false, yield2, std::get<1>(arg));
+                                //wamp.async_publish(uri + ".data", false, yield2, "test");
+                            } catch (const std::exception& e)
+                            {
+                                auto message = e.what();
+                                std::cout << message << "\n";
+                            }
+                        });
+                    });
+                    connections.push_back(con);
+
+                    std::string uri = std::string(hostname) + "." + encoders[i].name() + ".header";
+                    auto reg_id = wamp.async_register(uri, yield);
+                    int t=0;
+                    /*boost::asio::spawn(io_service,
+                                       [&wamp, &encoders, i](boost::asio::yield_context yield2)
+                    {
+                        for(;;)
+                        {
+                            auto req_id = wamp.async_receive_invocation(reg_id, yield2);
+                            wamp.async_yield<false>(req_id, std::make_tuple(encoders[i].header()), yield2);
+                        }
+                    });*/
                 }
 
                 q.flush();
@@ -148,18 +182,17 @@ int main() {
                 {
                     boost::asio::deadline_timer t(io_service, boost::posix_time::seconds(1));
                     t.async_wait(yield);
-                    auto data = q.pull();
-                    for(auto e: data)
-                    {
-                        std::string uri = std::string(hostname) + "." + std::get<0>(e) + ".data";
-                        wamp.async_publish(uri, false, yield, std::get<1>(e));
-                    }
+                    ws.async_ping("", yield);
                 }
             }
             catch (const std::exception& e)
             {
                 auto message = e.what();
-                std::cout << message << "\n\n";
+                std::cout << message << "\n";
+            }
+            for(auto con: connections)
+            {
+                con.disconnect();
             }
             boost::asio::deadline_timer t(io_service, boost::posix_time::seconds(5));
             t.async_wait(yield);
