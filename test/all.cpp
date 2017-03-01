@@ -5,6 +5,7 @@
 #include "muxer.h"
 #include "classifier.h"
 #include "generator.h"
+#include "http_server.h"
 #include <wamp2/wamp_router.h>
 #include <boost/signals2/signal.hpp>
 #include <boost/thread/thread.hpp>
@@ -19,16 +20,13 @@
 class encoder
 {
 public:
-    encoder()
+    encoder(int i) : index_(i)
     {
     }
-    encoder(const encoder& other)
+    encoder(const encoder& other) = default;
+    void start()
     {
-    }
-    void start(int i)
-    {
-        index_ = i;
-        std::thread t([&, i]() {
+        std::thread t([&]() {
             try {
                 qflow::video::demuxer demux;
                 int stream_index = 0;
@@ -89,6 +87,59 @@ private:
 
 };
 
+class video_session : public std::enable_shared_from_this<video_session>
+{
+public:
+    explicit video_session(tcp::socket socket)
+        : socket_(std::move(socket)), strand_(socket_.get_io_service())
+    {
+    }
+    ~video_session()
+    {
+        
+    }
+    void operator()(const std::vector<std::shared_ptr<encoder>>& encoders)
+    {
+        auto self(shared_from_this());
+        boost::asio::spawn(strand_,
+                           [this, self, encoders](boost::asio::yield_context yield)
+        {
+            try
+            {
+                req_type req;
+                beast::streambuf sb;
+                beast::http::async_read(socket_, sb, req, yield);
+                std::cout << req.url;
+                qflow::uri u(req.url);
+                beast::http::response<beast::http::string_body> resp;
+                resp.status = 404;
+                resp.reason = "Not Found";
+                resp.version = req.version;
+                resp.fields.insert("Content-Type", "text/html");
+                resp.fields.insert("Server", "test");
+                resp.body = "The file was not found";
+                qflow::queue<std::tuple<std::string, std::vector<char>>> q;
+                auto encoder = encoders[0];
+                auto con = encoder->live.connect([&](auto arg) {
+                        q.push(arg);
+                });
+                
+                beast::http::prepare(resp);
+                beast::http::async_write(socket_, resp, yield);
+                socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_both);
+            }
+            catch (boost::system::system_error& e)
+            {
+                auto message = e.what();
+                std::cout << message << "\n\n";
+            }
+        });
+    }
+private:
+    tcp::socket socket_;
+    boost::asio::io_service::strand strand_;
+};
+
 int main() {
 
     using namespace std::chrono_literals;
@@ -98,23 +149,25 @@ int main() {
     boost::thread_group threadpool;
     boost::asio::io_service io_service;
     boost::asio::io_service::work work(io_service);
-    for(int i=0; i<4; i++)
+    for(int i=0; i<1; i++)
     {
         threadpool.create_thread(
             boost::bind(&boost::asio::io_service::run, &io_service)
         );
     }
 
-    qflow::queue<std::tuple<std::string, std::string>> q;
+    qflow::queue<std::tuple<std::string, std::vector<char>>> q;
 
-    int size = 9;
-    std::vector<encoder> encoders(size, encoder());
+    int size = 8;
+    std::vector<std::shared_ptr<encoder>> encoders;
 
     for(int i=0; i<size; i++)
     {
-        encoders[i].start(i);
+        auto e= std::make_shared<encoder>(i);
+        encoders.push_back(e);
+        e->start();
     }
-
+    qflow::tcp_server<video_session>(io_service, "0.0.0.0", "4444")(encoders);
 
 
 
@@ -146,43 +199,26 @@ int main() {
                 boost::asio::io_service::strand strand(io_service);
                 for(int i=0; i<size; i++)
                 {
-                    auto con = encoders[i].live.connect([&](auto arg) {
-                        std::string uri = std::string(hostname) + "." + std::get<0>(arg);
-                        boost::asio::spawn(io_service,
-                                           [&wamp, uri, arg](boost::asio::yield_context yield2)
-                        {
-                            try {
-                                wamp.async_publish(uri + ".data", false, yield2, std::get<1>(arg));
-                                //wamp.async_publish(uri + ".data", false, yield2, "test");
-                            } catch (const std::exception& e)
-                            {
-                                auto message = e.what();
-                                std::cout << message << "\n";
-                            }
-                        });
+                    auto con = encoders[i]->live.connect([&](auto arg) {
+                        q.push(arg);
                     });
                     connections.push_back(con);
 
-                    std::string uri = std::string(hostname) + "." + encoders[i].name() + ".header";
+                    std::string uri = std::string(hostname) + "." + encoders[i]->name() + ".header";
                     auto reg_id = wamp.async_register(uri, yield);
                     int t=0;
-                    /*boost::asio::spawn(io_service,
-                                       [&wamp, &encoders, i](boost::asio::yield_context yield2)
-                    {
-                        for(;;)
-                        {
-                            auto req_id = wamp.async_receive_invocation(reg_id, yield2);
-                            wamp.async_yield<false>(req_id, std::make_tuple(encoders[i].header()), yield2);
-                        }
-                    });*/
                 }
 
                 q.flush();
                 for(;;)
                 {
+                    for(auto e: q.pull())
+                    {
+                        wamp.async_publish(std::get<0>(e), false, yield, std::get<1>(e));
+                    }
                     boost::asio::deadline_timer t(io_service, boost::posix_time::seconds(1));
                     t.async_wait(yield);
-                    ws.async_ping("", yield);
+                    std::cout << "published";
                 }
             }
             catch (const std::exception& e)
@@ -198,7 +234,6 @@ int main() {
             t.async_wait(yield);
         }
     });
-
 
 
     threadpool.join_all();
