@@ -149,7 +149,7 @@ int main() {
     boost::thread_group threadpool;
     boost::asio::io_service io_service;
     boost::asio::io_service::work work(io_service);
-    for(int i=0; i<1; i++)
+    for(int i=0; i<4; i++)
     {
         threadpool.create_thread(
             boost::bind(&boost::asio::io_service::run, &io_service)
@@ -182,7 +182,7 @@ int main() {
             try
             {
 
-                std::string const host = "40.217.1.18";//demo.crossbar.io
+                /*std::string const host = "40.217.1.18";//demo.crossbar.io
                 boost::asio::ip::tcp::resolver r {io_service};
                 boost::asio::ip::tcp::socket sock {io_service};
                 using stream_type = boost::asio::ip::tcp::socket;
@@ -194,31 +194,35 @@ int main() {
                 auto i = r.async_resolve(boost::asio::ip::tcp::resolver::query {host, "8080"}, yield);
                 boost::asio::async_connect(sock, i, yield);
                 ws.async_handshake(host, "/ws",yield);
-                wamp.async_handshake("realm1", yield);
+                wamp.async_handshake("realm1", yield);*/
 
-                boost::asio::io_service::strand strand(io_service);
+                qflow::async_queue<std::tuple<std::string, std::vector<char>>> q2(io_service);
                 for(int i=0; i<size; i++)
                 {
                     auto con = encoders[i]->live.connect([&](auto arg) {
                         q.push(arg);
+                        q2.async_push(arg);
+                        
                     });
                     connections.push_back(con);
 
                     std::string uri = std::string(hostname) + "." + encoders[i]->name() + ".header";
-                    auto reg_id = wamp.async_register(uri, yield);
+                    //auto reg_id = wamp.async_register(uri, yield);
                     int t=0;
                 }
 
                 q.flush();
                 for(;;)
                 {
-                    for(auto e: q.pull())
+                    auto aa = q2.async_pull(yield);
+                    auto c = aa.size();
+                    /*for(auto e: q.pull())
                     {
                         wamp.async_publish(std::get<0>(e), false, yield, std::get<1>(e));
                     }
                     boost::asio::deadline_timer t(io_service, boost::posix_time::seconds(1));
                     t.async_wait(yield);
-                    std::cout << "published";
+                    std::cout << "published";*/
                 }
             }
             catch (const std::exception& e)
