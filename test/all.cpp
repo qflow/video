@@ -5,7 +5,7 @@
 #include "muxer.h"
 #include "classifier.h"
 #include "generator.h"
-#include "http_server.h"
+#include "tcp_server.h"
 #include <wamp2/wamp_router.h>
 #include <boost/signals2/signal.hpp>
 #include <boost/thread/thread.hpp>
@@ -15,6 +15,7 @@
 #include "queue.h"
 #include <unistd.h>
 #include <limits.h>
+#include "queue_body.h"
 
 
 class encoder
@@ -111,7 +112,7 @@ public:
                 beast::http::async_read(socket_, sb, req, yield);
                 std::cout << req.url;
                 qflow::uri u(req.url);
-                beast::http::response<beast::http::string_body> resp;
+                beast::http::response<qflow::queue_body> resp;
                 resp.status = 404;
                 resp.reason = "Not Found";
                 resp.version = req.version;
@@ -200,8 +201,8 @@ int main() {
                 for(int i=0; i<size; i++)
                 {
                     auto con = encoders[i]->live.connect([&](auto arg) {
-                        q.push(arg);
-                        q2.async_push(arg);
+                        //q.push(arg);
+                        //q2.async_push(arg);
                         
                     });
                     connections.push_back(con);
