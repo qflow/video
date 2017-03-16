@@ -29,9 +29,10 @@ public:
     }
     void write(AVPacketPointer packet)
     {
-        AVRational fpsScale = { 1,30 };
+        AVRational fpsScale = { 1,25 };
         av_packet_rescale_ts(packet.get(), fpsScale, _formatContext->streams[packet->stream_index]->time_base);
         int ret = av_write_frame(_formatContext.get(), packet.get());
+        int t=0;
     }
     std::string header() const
     {
@@ -90,7 +91,7 @@ public:
     }
     void write(AVPacketPointer packet)
     {
-        AVRational fpsScale = { 1,30 };
+        AVRational fpsScale = { 1,25 };
         av_packet_rescale_ts(packet.get(), fpsScale, _formatContext->streams[packet->stream_index]->time_base);
         int ret = av_write_frame(_formatContext.get(), packet.get());
     }
