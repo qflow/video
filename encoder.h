@@ -30,7 +30,15 @@ public:
         {
             char* errBuf = new char[255];
             av_strerror(ret, errBuf, 255);
-            int a = 0;
+            throw std::runtime_error(errBuf);
+        }
+        if(dict)
+        {
+            std::string str = "Encoder Options ";
+            char* buf;
+            int err = av_dict_get_string(dict, &buf, ':', ' ');
+            str += std::string(buf) + " could not be set";
+            throw std::runtime_error(str);
         }
         int i = 0;
     }

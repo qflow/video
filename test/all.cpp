@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <limits.h>
 
+namespace fs = std::experimental::filesystem;
 
 class encoder
 {
@@ -37,11 +38,14 @@ public:
                 qflow::size s = { codec->width, codec->height };
                 qflow::video::decoder dec(codec);
                 qflow::video::converter conv(static_cast<AVPixelFormat>(codec->format), s, AVPixelFormat::AV_PIX_FMT_YUV420P, s);
-                qflow::video::encoder enc(AVCodecID::AV_CODEC_ID_VP8, s, { 25, 1 }, {{"flags", "+global_header"}, {"deadline", "realtime"}});
+                qflow::video::encoder enc(AVCodecID::AV_CODEC_ID_VP8, s, { 25, 1 }, {/*{"flags", "+global_header"},*/ {"deadline", "realtime"}, {"g", "60"}, {"keyint_min", "60"}});
                 codecpar_ = enc.codecpar();
                 std::stringstream os;
-                qflow::video::muxer<std::stringstream> mux("webm", os, {codecpar_});
-                header_ = mux.header();
+                fs::path video_dir("/workspace/" + name);
+                fs::create_directories(video_dir);
+                qflow::video::muxer<std::experimental::filesystem::path> mux("webm_chunk", video_dir.string() + "/%05d.webm", {codecpar_}, {{"header", video_dir.string() + "/header.hdr"}});
+                //qflow::video::muxer<std::experimental::filesystem::path> mux("dash", video_dir.string() + "/manifest.mpd", {codecpar_}, {{"init_seg_name", "init-stream$RepresentationID$.webm"}, {"media_seg_name", "chunk-stream$RepresentationID$-$Number%05d$.webm"}});
+                //header_ = mux.header();
                 std::cout << "Encoder " + name + " started\n";
                 for (auto packet : demux.packets()) {
                     if (packet->stream_index != stream_index)
@@ -59,6 +63,10 @@ public:
                             if(!vec.empty())
                             {
                                 live(vec);
+                            }
+                            else
+                            {
+                                int t=0;
                             }
                         }
 
@@ -114,8 +122,50 @@ public:
             boost::signals2::connection con;
             try
             {
+                req_type req;
+                beast::streambuf sb;
+                beast::http::async_read(socket_, sb, req, yield);
+                std::cout << req.url;
+                qflow::uri u(req.url);
+                fs::path file("/workspace" + req.url);
+                std::cout << req.url;
+                if(fs::exists(file))
+                {
+                    std::ifstream is(file.string());
+                    std::string str((std::istreambuf_iterator<char>(is)),
+                                    std::istreambuf_iterator<char>());
+                    std::string mime_type = mime_[file.extension()];
+
+                    beast::http::response<beast::http::string_body> res;
+                    res.status = 200;
+                    res.reason = "OK";
+                    res.version = req.version;
+                    res.fields.insert("Content-Type", mime_type);
+                    res.fields.insert("Server", "test");
+                    //res.fields.insert("Accept-Ranges", "bytes");
+                    res.body = str;
+                    beast::http::prepare(res);
+                    beast::http::async_write(socket_, res, yield);
+                }
+                else
+                {
+                    beast::http::response<beast::http::string_body> res;
+                    res.status = 404;
+                    res.reason = "Not Found";
+                    res.version = req.version;
+                    res.fields.insert("Content-Type", "text/html");
+                    res.fields.insert("Server", "test");
+                    res.fields.insert("Accept-Ranges", "bytes");
+                    res.body = "File not found";
+                    beast::http::prepare(res);
+                    beast::http::async_write(socket_, res, yield);
+                }
+                return;
+
+                auto index = std::stoi(u.path_item_at(2));
+
                 qflow::queue<std::vector<char>> q;
-                auto encoder = encoders[1];
+                auto encoder = encoders[index];
                 con = encoder->live.connect([&](auto arg) {
                     q.push(arg);
                 });
@@ -131,15 +181,11 @@ public:
                         q.push(vec);
                     }
                 });*/
-                req_type req;
-                beast::streambuf sb;
-                beast::http::async_read(socket_, sb, req, yield);
-                std::cout << req.url;
-                qflow::uri u(req.url);
+
                 beast::http::response_header header;
                 header.version = req.version;
                 header.fields.insert("Content-Type", "video/webm");
-                header.fields.insert("Server", "test");
+                //header.fields.insert("Server", "test");
                 header.fields.insert("Accept-Ranges", "bytes");
                 header.fields.insert("Connection", "Keep-Alive");
                 if(req.fields.exists("Range"))
@@ -200,6 +246,8 @@ public:
 private:
     tcp::socket socket_;
     boost::asio::io_service::strand strand_;
+    std::map<std::string, std::string> mime_ = {{".html", "text/html"}, {".mpd", "application/dash+xml"}, 
+    {"m4s", "video/mp4"}};
 };
 
 int main() {
