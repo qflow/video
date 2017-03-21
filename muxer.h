@@ -28,9 +28,9 @@ public:
             int ret = avcodec_parameters_copy(avStream->codecpar, codec_param);
             int y=0;
         }
-        const int bufSize = 32 * 1024;     
-        unsigned char* buffer = new unsigned char[bufSize];     
-        _formatContext->pb = avio_alloc_context(buffer, bufSize, 1, this, 0, muxer::writePacket, 0);     
+        const int bufSize = 32 * 1024;
+        unsigned char* buffer = new unsigned char[bufSize];
+        _formatContext->pb = avio_alloc_context(buffer, bufSize, 1, this, 0, muxer::writePacket, 0);
         _formatContext->flags = AVFMT_FLAG_CUSTOM_IO;
         AVDictionary* dict = NULL;
         for(auto opt: options)
@@ -65,9 +65,9 @@ public:
     std::string header() const
     {
         return header_;
-    }    
+    }
 private:
-    static int writePacket(void *opaque, uint8_t *buf, int buf_size)     
+    static int writePacket(void *opaque, uint8_t *buf, int buf_size)
     {
         muxer* mux = static_cast<muxer*>(opaque);
         std::string str = std::string(reinterpret_cast<const char*>(buf), buf_size);
@@ -102,11 +102,13 @@ public:
             int ret = avcodec_parameters_copy(avStream->codecpar, codec_param);
             int y=0;
         }
-        
-        AVIOContext* io_ctx = NULL;
-        auto a = _formatContext.get();
-        int ret = avio_open(&io_ctx, filename.c_str(), AVIO_FLAG_WRITE);
-        _formatContext->pb = io_ctx;
+        int ret = 0;
+        if(!_formatContext->oformat->flags & AVFMT_NOFILE)
+        {
+            AVIOContext* io_ctx = NULL;
+            ret = avio_open(&io_ctx, filename.c_str(), AVIO_FLAG_WRITE);
+            _formatContext->pb = io_ctx;
+        }
         AVDictionary* dict = NULL;
         for(auto opt: options)
         {

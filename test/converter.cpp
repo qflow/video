@@ -110,7 +110,7 @@ int main(int argc, char *argv[])
         out += ".mp4";
         
         
-        qflow::video::encoder enc(AVCodecID::AV_CODEC_ID_H264, s, framerate);
+        qflow::video::encoder enc("libx264", s, framerate);
         qflow::video::muxer<std::experimental::filesystem::path> mux("asf", out, {enc.codecpar()});
         for (auto packet : demux.packets(start, end)) {
             if (packet->stream_index != stream_index)

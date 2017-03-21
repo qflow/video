@@ -9,9 +9,9 @@ namespace video {
 class encoder {
     using options_type = std::map<std::string, std::string>;
 public:
-    encoder(AVCodecID codec_id, size s, rational framerate, const options_type& options = options_type {})
+    encoder(const std::string& codec_name, size s, rational framerate, const options_type& options = options_type {})
     {
-        AVCodec* codec = avcodec_find_encoder(codec_id);
+        AVCodec* codec = avcodec_find_encoder_by_name(codec_name.c_str());
         context_.reset(avcodec_alloc_context3(codec));
         context_->width = s.width;
         context_->height = s.height;

@@ -38,13 +38,15 @@ public:
                 qflow::size s = { codec->width, codec->height };
                 qflow::video::decoder dec(codec);
                 qflow::video::converter conv(static_cast<AVPixelFormat>(codec->format), s, AVPixelFormat::AV_PIX_FMT_YUV420P, s);
-                qflow::video::encoder enc(AVCodecID::AV_CODEC_ID_VP8, s, { 25, 1 }, {/*{"flags", "+global_header"},*/ {"deadline", "realtime"}, {"g", "60"}, {"keyint_min", "60"}});
+                qflow::video::encoder enc("libx264", s, { 25, 1 }, {{"b", "30k"}, {"g", "30"}});
                 codecpar_ = enc.codecpar();
                 std::stringstream os;
-                fs::path video_dir("/workspace/" + name);
+                fs::path video_dir("/workspace/www/" + name);
+                std::error_code ec;
+                fs::remove_all(video_dir, ec);
                 fs::create_directories(video_dir);
-                qflow::video::muxer<std::experimental::filesystem::path> mux("webm_chunk", video_dir.string() + "/%05d.webm", {codecpar_}, {{"header", video_dir.string() + "/header.hdr"}});
-                //qflow::video::muxer<std::experimental::filesystem::path> mux("dash", video_dir.string() + "/manifest.mpd", {codecpar_}, {{"init_seg_name", "init-stream$RepresentationID$.webm"}, {"media_seg_name", "chunk-stream$RepresentationID$-$Number%05d$.webm"}});
+                qflow::video::muxer<std::experimental::filesystem::path> mux("dash", video_dir.string() + "/manifest.mpd", {codecpar_}, {{"window_size", "10"}, {"use_template", "1"}, {"use_timeline", "0"}});
+                //qflow::video::muxer<std::experimental::filesystem::path> mux("webm_chunk", video_dir.string() + "/data_%d.chk", {codecpar_}, {{"header", video_dir.string()+ "/header.hdr"}});
                 //header_ = mux.header();
                 std::cout << "Encoder " + name + " started\n";
                 for (auto packet : demux.packets()) {
@@ -127,9 +129,10 @@ public:
                 beast::http::async_read(socket_, sb, req, yield);
                 std::cout << req.url;
                 qflow::uri u(req.url);
-                fs::path file("/workspace" + req.url);
+                fs::path file("/workspace/www" + u.path());
                 std::cout << req.url;
-                if(fs::exists(file))
+                auto b = fs::exists(file);
+                if(fs::exists(file) && req.url != "/")
                 {
                     std::ifstream is(file.string());
                     std::string str((std::istreambuf_iterator<char>(is)),
@@ -145,7 +148,9 @@ public:
                     //res.fields.insert("Accept-Ranges", "bytes");
                     res.body = str;
                     beast::http::prepare(res);
+                    std::cout << res;
                     beast::http::async_write(socket_, res, yield);
+                    int ti=0;
                 }
                 else
                 {
