@@ -38,14 +38,14 @@ public:
                 qflow::size s = { codec->width, codec->height };
                 qflow::video::decoder dec(codec);
                 qflow::video::converter conv(static_cast<AVPixelFormat>(codec->format), s, AVPixelFormat::AV_PIX_FMT_YUV420P, s);
-                qflow::video::encoder enc("libx264", s, { 25, 1 }, {{"b", "30k"}, {"g", "30"}});
+                qflow::video::encoder enc("libx264", s, { 25, 1 }, {{"b", "30k"}, {"g", "30"}, {"profile", "baseline"}, {"level", "3.0"}});
                 codecpar_ = enc.codecpar();
                 std::stringstream os;
-                fs::path video_dir("/workspace/www/" + name);
+                fs::path video_dir("/var/www/html/test/" + name);
                 std::error_code ec;
                 fs::remove_all(video_dir, ec);
                 fs::create_directories(video_dir);
-                qflow::video::muxer<std::experimental::filesystem::path> mux("dash", video_dir.string() + "/manifest.mpd", {codecpar_}, {{"window_size", "10"}, {"use_template", "1"}, {"use_timeline", "0"}});
+                qflow::video::muxer<std::experimental::filesystem::path> mux("dash", video_dir.string() + "/manifest.mpd", {codecpar_}, {{"window_size", "10"}, {"use_template", "1"}, {"use_timeline", "1"}});
                 //qflow::video::muxer<std::experimental::filesystem::path> mux("webm_chunk", video_dir.string() + "/data_%d.chk", {codecpar_}, {{"header", video_dir.string()+ "/header.hdr"}});
                 //header_ = mux.header();
                 std::cout << "Encoder " + name + " started\n";
@@ -134,12 +134,20 @@ public:
                 auto b = fs::exists(file);
                 if(fs::exists(file) && req.url != "/")
                 {
+                    beast::http::response<beast::http::string_body> res;
+                    if(req.fields.exists("Range"))
+                    {
+                        auto range = req.fields["Range"].to_string();
+                        range.replace(5, 1, " ");
+                        res.status = 206;
+                        res.reason = "Partial Content";
+                    }
                     std::ifstream is(file.string());
                     std::string str((std::istreambuf_iterator<char>(is)),
                                     std::istreambuf_iterator<char>());
                     std::string mime_type = mime_[file.extension()];
 
-                    beast::http::response<beast::http::string_body> res;
+                    
                     res.status = 200;
                     res.reason = "OK";
                     res.version = req.version;
@@ -252,7 +260,7 @@ private:
     tcp::socket socket_;
     boost::asio::io_service::strand strand_;
     std::map<std::string, std::string> mime_ = {{".html", "text/html"}, {".mpd", "application/dash+xml"}, 
-    {"m4s", "video/mp4"}};
+    {".m4s", "video/mp4"}, {".webm", "video/webm"}};
 };
 
 int main() {
