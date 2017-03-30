@@ -45,7 +45,7 @@ public:
                 std::error_code ec;
                 fs::remove_all(video_dir, ec);
                 fs::create_directories(video_dir);
-                qflow::video::muxer<std::experimental::filesystem::path> mux("dash", video_dir.string() + "/manifest.mpd", {codecpar_}, {{"window_size", "10"}, {"use_template", "1"}, {"use_timeline", "1"}});
+                qflow::video::muxer<fs::path> mux("dash", video_dir.string() + "/manifest.mpd", {codecpar_}, {{"window_size", "10"}, {"use_template", "1"}, {"use_timeline", "1"}});
                 //qflow::video::muxer<std::experimental::filesystem::path> mux("webm_chunk", video_dir.string() + "/data_%d.chk", {codecpar_}, {{"header", video_dir.string()+ "/header.hdr"}});
                 //header_ = mux.header();
                 std::cout << "Encoder " + name + " started\n";
